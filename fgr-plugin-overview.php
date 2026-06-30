@@ -3,7 +3,7 @@
  * Plugin Name:  FGR Plugin-Übersicht
  * Description:  Zeigt immer das Menü "FGR Plugins" im Backend – auch wenn keine Plugins aktiv sind.
  *               Verwendet dieselben Funktionsnamen wie fgr-hide-login, damit kein doppeltes Menü entsteht.
- * Version:      1.4.0
+ * Version:      1.5.0
  * Author:       Freie Gestalterische Republik
  */
 
@@ -164,6 +164,84 @@ function fgr_mu_upgrader_hook( $upgrader, array $hook_extra ): void {
         }
     }
 }
+
+// ── PUC für inaktive FGR-Plugins + Plugin-Listenlinks ────────────────────────
+// PUC wird durch das jeweilige Plugin geladen wenn aktiv. Damit "Details anzeigen"
+// und "Nach Update suchen" auch für INAKTIVE Plugins erscheinen, initialisiert
+// das MU-Plugin PUC zusätzlich für alle nicht-aktiven FGR-Plugins.
+
+add_action( 'plugins_loaded', function (): void {
+    $fgr_plugins = [
+        'fgr-mail-smtp'   => 'fgr-mail-smtp/fgr-mail-smtp.php',
+        'fgr-hide-login'  => 'fgr-hide-login/fgr-hide-login.php',
+        'fgr-maintenance' => 'fgr-maintenance/fgr-maintenance.php',
+    ];
+
+    $active_plugins = (array) get_option( 'active_plugins', [] );
+
+    // PUC-Bibliothek aus dem ersten vorhandenen FGR-Plugin laden (falls nicht schon geladen)
+    if ( ! class_exists( 'YahnisElsts\PluginUpdateChecker\v5\PucFactory' ) ) {
+        foreach ( array_keys( $fgr_plugins ) as $slug ) {
+            $lib = WP_PLUGIN_DIR . '/' . $slug . '/lib/plugin-update-checker/plugin-update-checker.php';
+            if ( file_exists( $lib ) ) {
+                require_once $lib;
+                break;
+            }
+        }
+    }
+
+    // PUC für jedes installierte aber inaktive FGR-Plugin initialisieren
+    if ( class_exists( 'YahnisElsts\PluginUpdateChecker\v5\PucFactory' ) ) {
+        foreach ( $fgr_plugins as $slug => $plugin_file ) {
+            if ( in_array( $plugin_file, $active_plugins, true ) ) continue;
+            $plugin_path = WP_PLUGIN_DIR . '/' . $plugin_file;
+            if ( ! file_exists( $plugin_path ) ) continue;
+
+            $updater = YahnisElsts\PluginUpdateChecker\v5\PucFactory::buildUpdateChecker(
+                'https://github.com/FreieGestalterischeRepublik/' . $slug . '/',
+                $plugin_path,
+                $slug
+            );
+            $updater->setBranch( 'main' );
+            $updater->getVcsApi()->enableReleaseAssets();
+        }
+    }
+
+    // plugin_row_meta Links für alle FGR-Plugins sicherstellen.
+    // PUC überspringt "Details anzeigen" wenn WordPress einen slug in plugin_data setzt
+    // (passiert wenn ein Update verfügbar ist). Dieser Filter füllt die Lücke.
+    add_filter( 'plugin_row_meta', function ( array $links, string $plugin_file ) use ( $fgr_plugins ): array {
+        if ( ! in_array( $plugin_file, $fgr_plugins, true ) ) {
+            return $links;
+        }
+        if ( ! current_user_can( 'update_plugins' ) ) {
+            return $links;
+        }
+
+        $slug = (string) array_search( $plugin_file, $fgr_plugins, true );
+
+        $has_details = false;
+        $has_check   = false;
+        foreach ( $links as $link ) {
+            if ( strpos( $link, 'open-plugin-details-modal' ) !== false ) $has_details = true;
+            if ( strpos( $link, 'puc_check_for_updates' )     !== false ) $has_check   = true;
+        }
+
+        if ( ! $has_details ) {
+            $url     = network_admin_url( 'plugin-install.php?tab=plugin-information&plugin=' . urlencode( $slug ) . '&TB_iframe=true&width=600&height=550' );
+            $links[] = '<a href="' . esc_url( $url ) . '" class="thickbox open-plugin-details-modal">Details anzeigen</a>';
+        }
+        if ( ! $has_check ) {
+            $url     = wp_nonce_url(
+                add_query_arg( [ 'puc_check_for_updates' => 1, 'puc_slug' => $slug ], self_admin_url( 'plugins.php' ) ),
+                'puc_check_for_updates'
+            );
+            $links[] = '<a href="' . esc_url( $url ) . '">Nach Update suchen</a>';
+        }
+        return $links;
+    }, 20, 2 );
+
+}, 99 );
 
 // ── Gemeinsamer FGR-Admin-Menüpunkt ──────────────────────────────────────────
 
