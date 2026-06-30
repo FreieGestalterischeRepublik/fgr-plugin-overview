@@ -3,7 +3,7 @@
  * Plugin Name:  FGR Plugin-Übersicht
  * Description:  Zeigt immer das Menü "FGR Plugins" im Backend – auch wenn keine Plugins aktiv sind.
  *               Verwendet dieselben Funktionsnamen wie fgr-hide-login, damit kein doppeltes Menü entsteht.
- * Version:      1.2.0
+ * Version:      1.3.0
  * Author:       Freie Gestalterische Republik
  */
 
