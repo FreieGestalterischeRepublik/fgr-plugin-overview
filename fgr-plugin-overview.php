@@ -3,7 +3,7 @@
  * Plugin Name:  FGR Plugin-Übersicht
  * Description:  Zeigt immer das Menü "FGR Plugins" im Backend – auch wenn keine Plugins aktiv sind.
  *               Verwendet dieselben Funktionsnamen wie fgr-hide-login, damit kein doppeltes Menü entsteht.
- * Version:      1.3.0
+ * Version:      1.4.0
  * Author:       Freie Gestalterische Republik
  */
 
@@ -11,50 +11,45 @@ defined( 'ABSPATH' ) || exit;
 
 // ── MU-Plugin-Sync ────────────────────────────────────────────────────────────
 // Lädt die aktuelle Version des MU-Plugins von GitHub und überschreibt die lokale Datei
-// wenn eine neuere Version verfügbar ist.
+// wenn eine neuere Version verfügbar ist. Gibt true zurück bei Erfolg, false bei Fehler.
 
 if ( ! function_exists( 'fgr_mu_sync' ) ) {
-    function fgr_mu_sync(): void {
+    function fgr_mu_sync(): bool {
         $url      = 'https://raw.githubusercontent.com/FreieGestalterischeRepublik/fgr-plugin-overview/main/fgr-plugin-overview.php';
         $dest_dir = WPMU_PLUGIN_DIR;
         $dest     = $dest_dir . '/fgr-plugin-overview.php';
 
-        // Datei von GitHub laden
         $response = wp_remote_get( $url, [
             'timeout'    => 15,
             'user-agent' => 'WordPress/' . get_bloginfo( 'version' ) . '; ' . home_url(),
         ] );
 
-        if ( is_wp_error( $response ) ) return;
-        if ( 200 !== wp_remote_retrieve_response_code( $response ) ) return;
+        if ( is_wp_error( $response ) ) return false;
+        if ( 200 !== wp_remote_retrieve_response_code( $response ) ) return false;
 
         $remote_content = wp_remote_retrieve_body( $response );
-        if ( empty( $remote_content ) ) return;
+        if ( empty( $remote_content ) ) return false;
 
-        // Version aus Remote-Datei lesen
         preg_match( '/\*\s+Version:\s+([\d.]+)/i', $remote_content, $matches );
         $remote_version = $matches[1] ?? '0';
 
-        // Version der installierten Datei lesen
         $installed_version = fgr_mu_installed_version();
 
-        // Nur updaten wenn Remote-Version neuer ist (oder Datei fehlt)
         if ( ! file_exists( $dest ) || version_compare( $remote_version, $installed_version, '>' ) ) {
-            // Ordner anlegen wenn nicht vorhanden
             if ( ! is_dir( $dest_dir ) ) {
                 wp_mkdir_p( $dest_dir );
             }
-            // Datei schreiben
-            file_put_contents( $dest, $remote_content );
-            // Transient löschen damit Update-Info neu geladen wird
+            $written = file_put_contents( $dest, $remote_content );
+            if ( false === $written ) return false;
             delete_transient( 'fgr_mu_update_info' );
         }
+
+        return true;
     }
 }
 
 // ── Hilfsfunktionen für Update-Check ─────────────────────────────────────────
 
-// Liest die installierte Version des MU-Plugins aus dem PHP-Header
 function fgr_mu_installed_version(): string {
     $file = WPMU_PLUGIN_DIR . '/fgr-plugin-overview.php';
     if ( ! file_exists( $file ) ) return '0';
@@ -63,7 +58,6 @@ function fgr_mu_installed_version(): string {
     return $m[1] ?? '0';
 }
 
-// Prüft GitHub API auf neue Versionen, cached Ergebnis 6 Stunden
 function fgr_mu_get_update_info( bool $force = false ): array {
     if ( ! $force ) {
         $cached = get_transient( 'fgr_mu_update_info' );
@@ -81,11 +75,11 @@ function fgr_mu_get_update_info( bool $force = false ): array {
     );
 
     if ( is_wp_error( $response ) || 200 !== wp_remote_retrieve_response_code( $response ) ) {
-        // Bei Fehler leeres Ergebnis zurückgeben (kein Cache)
         return [
             'current'          => $current,
             'latest'           => $current,
             'update_available' => false,
+            'error'            => is_wp_error( $response ) ? $response->get_error_message() : 'HTTP ' . wp_remote_retrieve_response_code( $response ),
         ];
     }
 
@@ -98,7 +92,6 @@ function fgr_mu_get_update_info( bool $force = false ): array {
         'update_available' => version_compare( $latest, $current, '>' ),
     ];
 
-    // 6 Stunden cachen
     set_transient( 'fgr_mu_update_info', $info, 6 * HOUR_IN_SECONDS );
 
     return $info;
@@ -113,7 +106,6 @@ function fgr_mu_check_update_handler(): void {
     if ( ! current_user_can( 'manage_options' ) ) {
         wp_send_json_error( 'Keine Berechtigung.' );
     }
-    // Transient löschen → frisch von GitHub laden
     delete_transient( 'fgr_mu_update_info' );
     $info = fgr_mu_get_update_info( true );
     wp_send_json_success( $info );
@@ -128,44 +120,52 @@ function fgr_mu_do_update_handler(): void {
     if ( ! current_user_can( 'manage_options' ) ) {
         wp_send_json_error( 'Keine Berechtigung.' );
     }
-    fgr_mu_sync();
+    $ok = fgr_mu_sync();
+    if ( ! $ok ) {
+        wp_send_json_error( 'Update fehlgeschlagen. Mögliche Ursachen: keine Schreibrechte auf mu-plugins/, GitHub nicht erreichbar.' );
+    }
     delete_transient( 'fgr_mu_update_info' );
     $new_version = fgr_mu_installed_version();
     wp_send_json_success( [ 'version' => $new_version ] );
 }
 
 // ── upgrader_process_complete Hook ───────────────────────────────────────────
-// Wenn ein FGR-Plugin updated wird, MU-Plugin ebenfalls aktualisieren
+// Aktualisiert das MU-Plugin wenn ein FGR-Plugin geupdated ODER installiert wird.
 
 add_action( 'upgrader_process_complete', 'fgr_mu_upgrader_hook', 10, 2 );
 
 function fgr_mu_upgrader_hook( $upgrader, array $hook_extra ): void {
     if ( ( $hook_extra['type'] ?? '' ) !== 'plugin' ) return;
-    if ( ( $hook_extra['action'] ?? '' ) !== 'update' ) return;
 
-    // FGR-Plugins die einen MU-Plugin-Sync auslösen
-    $fgr_plugins = [
-        'fgr-mail-smtp/fgr-mail-smtp.php',
-        'fgr-hide-login/fgr-hide-login.php',
-        'fgr-maintenance/fgr-maintenance.php',
-    ];
+    $action = $hook_extra['action'] ?? '';
 
-    // Einzelnes Plugin oder Liste prüfen
-    $updated = array_merge(
-        isset( $hook_extra['plugin'] )  ? (array) $hook_extra['plugin']  : [],
-        isset( $hook_extra['plugins'] ) ? (array) $hook_extra['plugins'] : []
-    );
+    // Bei Plugin-Installation: immer syncen (bei Install ist kein Plugin-Name verfügbar)
+    if ( $action === 'install' ) {
+        fgr_mu_sync();
+        return;
+    }
 
-    foreach ( $updated as $plugin_file ) {
-        if ( in_array( $plugin_file, $fgr_plugins, true ) ) {
-            fgr_mu_sync();
-            return;
+    // Bei Plugin-Update: nur syncen wenn es ein FGR-Plugin war
+    if ( $action === 'update' ) {
+        $fgr_plugins = [
+            'fgr-mail-smtp/fgr-mail-smtp.php',
+            'fgr-hide-login/fgr-hide-login.php',
+            'fgr-maintenance/fgr-maintenance.php',
+        ];
+        $updated = array_merge(
+            isset( $hook_extra['plugin'] )  ? (array) $hook_extra['plugin']  : [],
+            isset( $hook_extra['plugins'] ) ? (array) $hook_extra['plugins'] : []
+        );
+        foreach ( $updated as $plugin_file ) {
+            if ( in_array( $plugin_file, $fgr_plugins, true ) ) {
+                fgr_mu_sync();
+                return;
+            }
         }
     }
 }
 
 // ── Gemeinsamer FGR-Admin-Menüpunkt ──────────────────────────────────────────
-// function_exists-Guard verhindert Doppelung wenn mehrere FGR-Plugins aktiv sind
 
 if ( ! function_exists( 'fgr_register_admin_menu' ) ) {
 
@@ -233,7 +233,7 @@ if ( ! function_exists( 'fgr_register_admin_menu' ) ) {
                 <div style="background:#fff;border:1px solid #ccd0d4;border-radius:4px;padding:20px 24px;min-width:240px;max-width:320px">
                     <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:4px">
                         <h2 style="margin:0"><?php echo esc_html( $p['name'] ); ?></h2>
-                        <?php echo $badge; // phpcs:ignore -- badge enthält kontrolliertes HTML ?>
+                        <?php echo $badge; // phpcs:ignore ?>
                     </div>
                     <p style="color:#555;margin-bottom:16px"><?php echo esc_html( $p['desc'] ); ?></p>
                     <?php if ( $active ) : ?>
@@ -255,7 +255,6 @@ if ( ! function_exists( 'fgr_register_admin_menu' ) ) {
             </div>
 
             <?php
-            // ── MU-Plugin Statuszeile ─────────────────────────────────────────
             $mu_info    = get_transient( 'fgr_mu_update_info' );
             $mu_version = fgr_mu_installed_version();
             $has_update = is_array( $mu_info ) && ! empty( $mu_info['update_available'] );
@@ -284,12 +283,13 @@ if ( ! function_exists( 'fgr_register_admin_menu' ) ) {
 
         <script>
         (function () {
-            // Button "Update suchen"
-            var checkBtn = document.getElementById( 'fgr-mu-check-update' );
+            var checkBtn  = document.getElementById( 'fgr-mu-check-update' );
+            var updateBtn = document.getElementById( 'fgr-mu-do-update' );
+            var msg       = document.getElementById( 'fgr-mu-msg' );
+
             if ( checkBtn ) {
                 checkBtn.addEventListener( 'click', function () {
                     var btn = this;
-                    var msg = document.getElementById( 'fgr-mu-msg' );
                     btn.disabled    = true;
                     btn.textContent = 'Suche…';
                     msg.textContent = '';
@@ -304,7 +304,6 @@ if ( ! function_exists( 'fgr_register_admin_menu' ) ) {
                     .then( function ( data ) {
                         if ( data.success ) {
                             if ( data.data.update_available ) {
-                                // Update gefunden → Seite neu laden (Server zeigt Update-Button)
                                 location.reload();
                             } else {
                                 btn.disabled    = false;
@@ -325,12 +324,9 @@ if ( ! function_exists( 'fgr_register_admin_menu' ) ) {
                 } );
             }
 
-            // Button "Update durchführen"
-            var updateBtn = document.getElementById( 'fgr-mu-do-update' );
             if ( updateBtn ) {
                 updateBtn.addEventListener( 'click', function () {
                     var btn = this;
-                    var msg = document.getElementById( 'fgr-mu-msg' );
                     btn.disabled    = true;
                     btn.textContent = 'Aktualisiere…';
                     msg.textContent = '';
@@ -348,19 +344,20 @@ if ( ! function_exists( 'fgr_register_admin_menu' ) ) {
                         } else {
                             btn.disabled    = false;
                             btn.textContent = 'Update ' + btn.dataset.version + ' durchführen';
+                            msg.style.color = '#d63638';
                             msg.textContent = 'Fehler: ' + ( data.data || 'Unbekannt' );
                         }
                     } )
                     .catch( function () {
                         btn.disabled    = false;
                         btn.textContent = 'Update ' + btn.dataset.version + ' durchführen';
+                        msg.style.color = '#d63638';
                         msg.textContent = 'Verbindungsfehler.';
                     } );
                 } );
             }
         }());
 
-        // Install-Buttons für Plugins
         document.querySelectorAll( '.fgr-install-btn' ).forEach( function ( btn ) {
             btn.addEventListener( 'click', function () {
                 var self = this;
@@ -431,6 +428,9 @@ if ( ! function_exists( 'fgr_register_admin_menu' ) ) {
         if ( is_dir( $wrong_dir ) && ! is_dir( $correct_dir ) ) {
             rename( $wrong_dir, $correct_dir );
         }
+
+        // MU-Plugin nach Plugin-Installation aktualisieren
+        fgr_mu_sync();
 
         wp_send_json_success( [ 'message' => 'Plugin erfolgreich installiert.' ] );
     }
