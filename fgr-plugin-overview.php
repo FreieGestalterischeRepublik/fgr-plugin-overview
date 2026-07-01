@@ -1,17 +1,15 @@
 <?php
 /**
- * Plugin Name:  FGR Plugin-Übersicht
+ * Plugin Name:  FGR Plugin-Übersicht MU
  * Description:  Zeigt immer das Menü "FGR Plugins" im Backend – auch wenn keine Plugins aktiv sind.
  *               Verwendet dieselben Funktionsnamen wie fgr-hide-login, damit kein doppeltes Menü entsteht.
- * Version:      1.5.0
+ * Version:      1.6.0
  * Author:       Freie Gestalterische Republik
  */
 
 defined( 'ABSPATH' ) || exit;
 
 // ── MU-Plugin-Sync ────────────────────────────────────────────────────────────
-// Lädt die aktuelle Version des MU-Plugins von GitHub und überschreibt die lokale Datei
-// wenn eine neuere Version verfügbar ist. Gibt true zurück bei Erfolg, false bei Fehler.
 
 if ( ! function_exists( 'fgr_mu_sync' ) ) {
     function fgr_mu_sync(): bool {
@@ -130,7 +128,6 @@ function fgr_mu_do_update_handler(): void {
 }
 
 // ── upgrader_process_complete Hook ───────────────────────────────────────────
-// Aktualisiert das MU-Plugin wenn ein FGR-Plugin geupdated ODER installiert wird.
 
 add_action( 'upgrader_process_complete', 'fgr_mu_upgrader_hook', 10, 2 );
 
@@ -139,18 +136,17 @@ function fgr_mu_upgrader_hook( $upgrader, array $hook_extra ): void {
 
     $action = $hook_extra['action'] ?? '';
 
-    // Bei Plugin-Installation: immer syncen (bei Install ist kein Plugin-Name verfügbar)
     if ( $action === 'install' ) {
         fgr_mu_sync();
         return;
     }
 
-    // Bei Plugin-Update: nur syncen wenn es ein FGR-Plugin war
     if ( $action === 'update' ) {
         $fgr_plugins = [
             'fgr-mail-smtp/fgr-mail-smtp.php',
             'fgr-hide-login/fgr-hide-login.php',
             'fgr-maintenance/fgr-maintenance.php',
+            'fgr-email-encoder/fgr-email-encoder.php',
         ];
         $updated = array_merge(
             isset( $hook_extra['plugin'] )  ? (array) $hook_extra['plugin']  : [],
@@ -166,20 +162,17 @@ function fgr_mu_upgrader_hook( $upgrader, array $hook_extra ): void {
 }
 
 // ── PUC für inaktive FGR-Plugins + Plugin-Listenlinks ────────────────────────
-// PUC wird durch das jeweilige Plugin geladen wenn aktiv. Damit "Details anzeigen"
-// und "Nach Update suchen" auch für INAKTIVE Plugins erscheinen, initialisiert
-// das MU-Plugin PUC zusätzlich für alle nicht-aktiven FGR-Plugins.
 
 add_action( 'plugins_loaded', function (): void {
     $fgr_plugins = [
-        'fgr-mail-smtp'   => 'fgr-mail-smtp/fgr-mail-smtp.php',
-        'fgr-hide-login'  => 'fgr-hide-login/fgr-hide-login.php',
-        'fgr-maintenance' => 'fgr-maintenance/fgr-maintenance.php',
+        'fgr-mail-smtp'      => 'fgr-mail-smtp/fgr-mail-smtp.php',
+        'fgr-hide-login'     => 'fgr-hide-login/fgr-hide-login.php',
+        'fgr-maintenance'    => 'fgr-maintenance/fgr-maintenance.php',
+        'fgr-email-encoder'  => 'fgr-email-encoder/fgr-email-encoder.php',
     ];
 
     $active_plugins = (array) get_option( 'active_plugins', [] );
 
-    // PUC-Bibliothek aus dem ersten vorhandenen FGR-Plugin laden (falls nicht schon geladen)
     if ( ! class_exists( 'YahnisElsts\PluginUpdateChecker\v5\PucFactory' ) ) {
         foreach ( array_keys( $fgr_plugins ) as $slug ) {
             $lib = WP_PLUGIN_DIR . '/' . $slug . '/lib/plugin-update-checker/plugin-update-checker.php';
@@ -190,7 +183,6 @@ add_action( 'plugins_loaded', function (): void {
         }
     }
 
-    // PUC für jedes installierte aber inaktive FGR-Plugin initialisieren
     if ( class_exists( 'YahnisElsts\PluginUpdateChecker\v5\PucFactory' ) ) {
         foreach ( $fgr_plugins as $slug => $plugin_file ) {
             if ( in_array( $plugin_file, $active_plugins, true ) ) continue;
@@ -207,9 +199,6 @@ add_action( 'plugins_loaded', function (): void {
         }
     }
 
-    // plugin_row_meta Links für alle FGR-Plugins sicherstellen.
-    // PUC überspringt "Details anzeigen" wenn WordPress einen slug in plugin_data setzt
-    // (passiert wenn ein Update verfügbar ist). Dieser Filter füllt die Lücke.
     add_filter( 'plugin_row_meta', function ( array $links, string $plugin_file ) use ( $fgr_plugins ): array {
         if ( ! in_array( $plugin_file, $fgr_plugins, true ) ) {
             return $links;
@@ -290,6 +279,13 @@ if ( ! function_exists( 'fgr_register_admin_menu' ) ) {
                 'name' => 'FGR Maintenance',
                 'desc' => 'Under-Construction- oder Wartungsseite anzeigen',
                 'page' => 'fgr-maintenance',
+            ],
+            [
+                'slug' => 'fgr-email-encoder',
+                'file' => 'fgr-email-encoder/fgr-email-encoder.php',
+                'name' => 'FGR Email Encoder',
+                'desc' => 'E-Mail-Adressen vor Spam-Bots schützen',
+                'page' => 'fgr-email-encoder',
             ],
         ];
         ?>
@@ -480,7 +476,7 @@ if ( ! function_exists( 'fgr_register_admin_menu' ) ) {
         }
 
         $slug    = sanitize_key( $_POST['slug'] ?? '' );
-        $allowed = [ 'fgr-mail-smtp', 'fgr-hide-login', 'fgr-maintenance' ];
+        $allowed = [ 'fgr-mail-smtp', 'fgr-hide-login', 'fgr-maintenance', 'fgr-email-encoder' ];
 
         if ( ! in_array( $slug, $allowed, true ) ) {
             wp_send_json_error( 'Unbekanntes Plugin.' );
@@ -507,7 +503,6 @@ if ( ! function_exists( 'fgr_register_admin_menu' ) ) {
             rename( $wrong_dir, $correct_dir );
         }
 
-        // MU-Plugin nach Plugin-Installation aktualisieren
         fgr_mu_sync();
 
         wp_send_json_success( [ 'message' => 'Plugin erfolgreich installiert.' ] );
