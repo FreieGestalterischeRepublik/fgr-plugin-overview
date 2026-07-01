@@ -3,7 +3,7 @@
  * Plugin Name:  FGR Plugin-Übersicht MU
  * Description:  Zeigt immer das Menü "FGR Plugins" im Backend – auch wenn keine Plugins aktiv sind.
  *               Verwendet dieselben Funktionsnamen wie fgr-hide-login, damit kein doppeltes Menü entsteht.
- * Version:      1.6.0
+ * Version:      1.6.1
  * Author:       Freie Gestalterische Republik
  */
 
@@ -12,14 +12,16 @@ defined( 'ABSPATH' ) || exit;
 // ── MU-Plugin-Sync ────────────────────────────────────────────────────────────
 
 if ( ! function_exists( 'fgr_mu_sync' ) ) {
-    function fgr_mu_sync(): bool {
-        $url      = 'https://raw.githubusercontent.com/FreieGestalterischeRepublik/fgr-plugin-overview/main/fgr-plugin-overview.php';
+    function fgr_mu_sync( bool $force = false ): bool {
+        // Cache-Busting-Parameter verhindert CDN-Cache (GitHub raw hat bis zu 5 Min. Cache)
+        $url      = 'https://raw.githubusercontent.com/FreieGestalterischeRepublik/fgr-plugin-overview/main/fgr-plugin-overview.php?nocache=' . time();
         $dest_dir = WPMU_PLUGIN_DIR;
         $dest     = $dest_dir . '/fgr-plugin-overview.php';
 
         $response = wp_remote_get( $url, [
             'timeout'    => 15,
             'user-agent' => 'WordPress/' . get_bloginfo( 'version' ) . '; ' . home_url(),
+            'headers'    => [ 'Cache-Control' => 'no-cache' ],
         ] );
 
         if ( is_wp_error( $response ) ) return false;
@@ -33,7 +35,8 @@ if ( ! function_exists( 'fgr_mu_sync' ) ) {
 
         $installed_version = fgr_mu_installed_version();
 
-        if ( ! file_exists( $dest ) || version_compare( $remote_version, $installed_version, '>' ) ) {
+        // $force = true wird vom Update-Button gesetzt – überspringt Versionsvergleich
+        if ( $force || ! file_exists( $dest ) || version_compare( $remote_version, $installed_version, '>' ) ) {
             if ( ! is_dir( $dest_dir ) ) {
                 wp_mkdir_p( $dest_dir );
             }
@@ -118,7 +121,8 @@ function fgr_mu_do_update_handler(): void {
     if ( ! current_user_can( 'manage_options' ) ) {
         wp_send_json_error( 'Keine Berechtigung.' );
     }
-    $ok = fgr_mu_sync();
+    // $force = true: Versionsvergleich überspringen, immer schreiben
+    $ok = fgr_mu_sync( true );
     if ( ! $ok ) {
         wp_send_json_error( 'Update fehlgeschlagen. Mögliche Ursachen: keine Schreibrechte auf mu-plugins/, GitHub nicht erreichbar.' );
     }
