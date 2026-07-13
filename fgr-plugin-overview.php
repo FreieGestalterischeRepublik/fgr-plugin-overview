@@ -3,7 +3,7 @@
  * Plugin Name:  FGR Plugin-Übersicht MU
  * Description:  Zeigt immer das Menü "FGR Plugins" im Backend – auch wenn keine Plugins aktiv sind.
  *               Verwendet dieselben Funktionsnamen wie fgr-hide-login, damit kein doppeltes Menü entsteht.
- * Version:      1.6.1
+ * Version:      1.7.0
  * Author:       Freie Gestalterische Republik
  */
 
@@ -151,6 +151,7 @@ function fgr_mu_upgrader_hook( $upgrader, array $hook_extra ): void {
             'fgr-hide-login/fgr-hide-login.php',
             'fgr-maintenance/fgr-maintenance.php',
             'fgr-email-encoder/fgr-email-encoder.php',
+            'fgr-duplicate-post/fgr-duplicate-post.php',
         ];
         $updated = array_merge(
             isset( $hook_extra['plugin'] )  ? (array) $hook_extra['plugin']  : [],
@@ -169,10 +170,11 @@ function fgr_mu_upgrader_hook( $upgrader, array $hook_extra ): void {
 
 add_action( 'plugins_loaded', function (): void {
     $fgr_plugins = [
-        'fgr-mail-smtp'      => 'fgr-mail-smtp/fgr-mail-smtp.php',
-        'fgr-hide-login'     => 'fgr-hide-login/fgr-hide-login.php',
-        'fgr-maintenance'    => 'fgr-maintenance/fgr-maintenance.php',
-        'fgr-email-encoder'  => 'fgr-email-encoder/fgr-email-encoder.php',
+        'fgr-mail-smtp'       => 'fgr-mail-smtp/fgr-mail-smtp.php',
+        'fgr-hide-login'      => 'fgr-hide-login/fgr-hide-login.php',
+        'fgr-maintenance'     => 'fgr-maintenance/fgr-maintenance.php',
+        'fgr-email-encoder'   => 'fgr-email-encoder/fgr-email-encoder.php',
+        'fgr-duplicate-post'  => 'fgr-duplicate-post/fgr-duplicate-post.php',
     ];
 
     $active_plugins = (array) get_option( 'active_plugins', [] );
@@ -290,6 +292,13 @@ if ( ! function_exists( 'fgr_register_admin_menu' ) ) {
                 'name' => 'FGR Email Encoder',
                 'desc' => 'E-Mail-Adressen vor Spam-Bots schützen',
                 'page' => 'fgr-email-encoder',
+            ],
+            [
+                'slug' => 'fgr-duplicate-post',
+                'file' => 'fgr-duplicate-post/fgr-duplicate-post.php',
+                'name' => 'FGR Duplicate Post',
+                'desc' => 'Posts, Seiten und Custom Post Types mit einem Klick duplizieren',
+                'page' => 'fgr-duplicate-post',
             ],
         ];
         ?>
@@ -480,7 +489,7 @@ if ( ! function_exists( 'fgr_register_admin_menu' ) ) {
         }
 
         $slug    = sanitize_key( $_POST['slug'] ?? '' );
-        $allowed = [ 'fgr-mail-smtp', 'fgr-hide-login', 'fgr-maintenance', 'fgr-email-encoder' ];
+        $allowed = [ 'fgr-mail-smtp', 'fgr-hide-login', 'fgr-maintenance', 'fgr-email-encoder', 'fgr-duplicate-post' ];
 
         if ( ! in_array( $slug, $allowed, true ) ) {
             wp_send_json_error( 'Unbekanntes Plugin.' );
