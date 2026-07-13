@@ -3,7 +3,7 @@
  * Plugin Name:  FGR Plugin-Übersicht MU
  * Description:  Zeigt immer das Menü "FGR Plugins" im Backend – auch wenn keine Plugins aktiv sind.
  *               Verwendet dieselben Funktionsnamen wie fgr-hide-login, damit kein doppeltes Menü entsteht.
- * Version:      1.7.0
+ * Version:      1.8.0
  * Author:       Freie Gestalterische Republik
  */
 
@@ -152,6 +152,7 @@ function fgr_mu_upgrader_hook( $upgrader, array $hook_extra ): void {
             'fgr-maintenance/fgr-maintenance.php',
             'fgr-email-encoder/fgr-email-encoder.php',
             'fgr-duplicate-post/fgr-duplicate-post.php',
+            'fgr-2fa/fgr-2fa.php',
         ];
         $updated = array_merge(
             isset( $hook_extra['plugin'] )  ? (array) $hook_extra['plugin']  : [],
@@ -175,6 +176,7 @@ add_action( 'plugins_loaded', function (): void {
         'fgr-maintenance'     => 'fgr-maintenance/fgr-maintenance.php',
         'fgr-email-encoder'   => 'fgr-email-encoder/fgr-email-encoder.php',
         'fgr-duplicate-post'  => 'fgr-duplicate-post/fgr-duplicate-post.php',
+        'fgr-2fa'             => 'fgr-2fa/fgr-2fa.php',
     ];
 
     $active_plugins = (array) get_option( 'active_plugins', [] );
@@ -299,6 +301,13 @@ if ( ! function_exists( 'fgr_register_admin_menu' ) ) {
                 'name' => 'FGR Duplicate Post',
                 'desc' => 'Posts, Seiten und Custom Post Types mit einem Klick duplizieren',
                 'page' => 'fgr-duplicate-post',
+            ],
+            [
+                'slug' => 'fgr-2fa',
+                'file' => 'fgr-2fa/fgr-2fa.php',
+                'name' => 'FGR 2FA',
+                'desc' => 'Zwei-Faktor-Authentifizierung (TOTP, E-Mail, Backup-Codes)',
+                'page' => 'fgr-2fa',
             ],
         ];
         ?>
@@ -489,7 +498,7 @@ if ( ! function_exists( 'fgr_register_admin_menu' ) ) {
         }
 
         $slug    = sanitize_key( $_POST['slug'] ?? '' );
-        $allowed = [ 'fgr-mail-smtp', 'fgr-hide-login', 'fgr-maintenance', 'fgr-email-encoder', 'fgr-duplicate-post' ];
+        $allowed = [ 'fgr-mail-smtp', 'fgr-hide-login', 'fgr-maintenance', 'fgr-email-encoder', 'fgr-duplicate-post', 'fgr-2fa' ];
 
         if ( ! in_array( $slug, $allowed, true ) ) {
             wp_send_json_error( 'Unbekanntes Plugin.' );
