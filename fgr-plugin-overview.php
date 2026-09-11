@@ -3,7 +3,7 @@
  * Plugin Name:  FGR Plugin-Übersicht MU
  * Description:  Zeigt immer das Menü "FGR Plugins" im Backend – auch wenn keine Plugins aktiv sind.
  *               Verwendet dieselben Funktionsnamen wie fgr-hide-login, damit kein doppeltes Menü entsteht.
- * Version:      1.8.1
+ * Version:      1.8.2
  * Author:       Freie Gestalterische Republik
  */
 
@@ -183,7 +183,34 @@ function fgr_mu_upgrader_hook( $upgrader, array $hook_extra ): void {
 
 // ── PUC für inaktive FGR-Plugins + Plugin-Listenlinks ────────────────────────
 
+/**
+ * Ist $plugin_file das Ziel einer gerade laufenden Aktivierung (Einzel- oder Sammel-Aktion)
+ * in diesem Request? Wird gebraucht, um für genau dieses Plugin KEINE "Vorschau"-Instanz
+ * des Update-Checkers zu bauen (siehe Kommentar weiter unten) — sonst kollidiert die
+ * Vorschau-Instanz mit der echten Selbst-Registrierung, die das Plugin gleich im selben
+ * Request beim eigentlichen Laden auslöst, und die PUC-Bibliothek bricht mit einem
+ * "Slug already in use"-Fatal-Error ab.
+ */
+function fgr_mu_plugin_is_being_activated( string $plugin_file ): bool {
+    $action = sanitize_text_field( wp_unslash( $_REQUEST['action'] ?? '' ) );
+    if ( 'activate' === $action ) {
+        return sanitize_text_field( wp_unslash( $_REQUEST['plugin'] ?? '' ) ) === $plugin_file;
+    }
+    if ( in_array( $action, [ 'activate-selected' ], true ) ) {
+        $checked = array_map( 'sanitize_text_field', wp_unslash( (array) ( $_REQUEST['checked'] ?? [] ) ) );
+        return in_array( $plugin_file, $checked, true );
+    }
+    return false;
+}
+
 add_action( 'plugins_loaded', function (): void {
+    // Diese Vorschau-Instanzen dienen ausschließlich den Zusatzlinks ("Details anzeigen",
+    // "Nach Update suchen") in der Plugin-Liste im Backend — auf der Website selbst,
+    // bei Cron-Läufen und unter WP-CLI (das die Liste nie rendert) unnötig.
+    if ( ! is_admin() || ( defined( 'WP_CLI' ) && WP_CLI ) ) {
+        return;
+    }
+
     $fgr_plugins = [
         'fgr-mail-smtp'       => 'fgr-mail-smtp/fgr-mail-smtp.php',
         'fgr-hide-login'      => 'fgr-hide-login/fgr-hide-login.php',
@@ -208,6 +235,9 @@ add_action( 'plugins_loaded', function (): void {
     if ( class_exists( 'YahnisElsts\PluginUpdateChecker\v5\PucFactory' ) ) {
         foreach ( $fgr_plugins as $slug => $plugin_file ) {
             if ( in_array( $plugin_file, $active_plugins, true ) ) continue;
+            // Wird dieses Plugin gerade in diesem Request aktiviert, registriert es sich
+            // gleich selbst mit demselben Slug — keine Vorschau-Instanz dafür bauen.
+            if ( fgr_mu_plugin_is_being_activated( $plugin_file ) ) continue;
             $plugin_path = WP_PLUGIN_DIR . '/' . $plugin_file;
             if ( ! file_exists( $plugin_path ) ) continue;
 
