@@ -3,7 +3,7 @@
  * Plugin Name:  FGR Plugin-Übersicht MU
  * Description:  Zeigt immer das Menü "FGR Plugins" im Backend – auch wenn keine Plugins aktiv sind.
  *               Verwendet dieselben Funktionsnamen wie fgr-hide-login, damit kein doppeltes Menü entsteht.
- * Version:      1.8.0
+ * Version:      1.8.1
  * Author:       Freie Gestalterische Republik
  */
 
@@ -13,8 +13,22 @@ defined( 'ABSPATH' ) || exit;
 
 if ( ! function_exists( 'fgr_mu_sync' ) ) {
     function fgr_mu_sync( bool $force = false ): bool {
+        // An den jeweils aktuellen GitHub-Release gepinnt statt an den beweglichen main-Branch:
+        // ein Release ist ein bewusster, protokollierter Veröffentlichungsschritt, kein einzelner Push.
+        $release = wp_remote_get(
+            'https://api.github.com/repos/FreieGestalterischeRepublik/fgr-plugin-overview/releases/latest',
+            [
+                'timeout'    => 10,
+                'user-agent' => 'WordPress/' . get_bloginfo( 'version' ) . '; ' . home_url(),
+            ]
+        );
+        if ( is_wp_error( $release ) || 200 !== wp_remote_retrieve_response_code( $release ) ) return false;
+        $release_data = json_decode( wp_remote_retrieve_body( $release ), true );
+        $tag          = (string) ( $release_data['tag_name'] ?? '' );
+        if ( '' === $tag || ! preg_match( '/^v?[\d.]+$/', $tag ) ) return false;
+
         // Cache-Busting-Parameter verhindert CDN-Cache (GitHub raw hat bis zu 5 Min. Cache)
-        $url      = 'https://raw.githubusercontent.com/FreieGestalterischeRepublik/fgr-plugin-overview/main/fgr-plugin-overview.php?nocache=' . time();
+        $url      = 'https://raw.githubusercontent.com/FreieGestalterischeRepublik/fgr-plugin-overview/' . rawurlencode( $tag ) . '/fgr-plugin-overview.php?nocache=' . time();
         $dest_dir = WPMU_PLUGIN_DIR;
         $dest     = $dest_dir . '/fgr-plugin-overview.php';
 
@@ -507,7 +521,21 @@ if ( ! function_exists( 'fgr_register_admin_menu' ) ) {
         require_once ABSPATH . 'wp-admin/includes/class-wp-upgrader.php';
         require_once ABSPATH . 'wp-admin/includes/plugin.php';
 
-        $zip_url  = "https://github.com/FreieGestalterischeRepublik/{$slug}/archive/refs/heads/main.zip";
+        // An den aktuellen Release-Tag gepinnt statt an den beweglichen main-Branch
+        // (siehe fgr_mu_sync() oben) — ein Release ist ein bewusster Veröffentlichungsschritt.
+        $release = wp_remote_get(
+            "https://api.github.com/repos/FreieGestalterischeRepublik/{$slug}/releases/latest",
+            [ 'timeout' => 10, 'user-agent' => 'WordPress/' . get_bloginfo( 'version' ) . '; ' . home_url() ]
+        );
+        if ( is_wp_error( $release ) || 200 !== wp_remote_retrieve_response_code( $release ) ) {
+            wp_send_json_error( 'Release-Information konnte nicht geladen werden.' );
+        }
+        $tag = (string) ( json_decode( wp_remote_retrieve_body( $release ), true )['tag_name'] ?? '' );
+        if ( '' === $tag || ! preg_match( '/^v?[\d.]+$/', $tag ) ) {
+            wp_send_json_error( 'Ungültige Release-Version.' );
+        }
+
+        $zip_url  = "https://github.com/FreieGestalterischeRepublik/{$slug}/archive/refs/tags/{$tag}.zip";
         $skin     = new WP_Ajax_Upgrader_Skin();
         $upgrader = new Plugin_Upgrader( $skin );
         $result   = $upgrader->install( $zip_url );
@@ -519,10 +547,13 @@ if ( ! function_exists( 'fgr_register_admin_menu' ) ) {
             wp_send_json_error( 'Installation fehlgeschlagen. Bitte Dateisystem-Berechtigungen prüfen.' );
         }
 
-        $wrong_dir   = WP_PLUGIN_DIR . '/' . $slug . '-main';
+        // GitHub-Tag-Archive entpacken sich als "{slug}-{tag}" statt "{slug}" → umbenennen
         $correct_dir = WP_PLUGIN_DIR . '/' . $slug;
-        if ( is_dir( $wrong_dir ) && ! is_dir( $correct_dir ) ) {
-            rename( $wrong_dir, $correct_dir );
+        if ( ! is_dir( $correct_dir ) ) {
+            foreach ( glob( WP_PLUGIN_DIR . '/' . $slug . '-*', GLOB_ONLYDIR ) as $wrong_dir ) {
+                rename( $wrong_dir, $correct_dir );
+                break;
+            }
         }
 
         fgr_mu_sync();
