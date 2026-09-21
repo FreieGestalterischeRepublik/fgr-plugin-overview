@@ -3,7 +3,7 @@
  * Plugin Name:  FGR Plugin-Übersicht MU
  * Description:  Zeigt immer das Menü "FGR Plugins" im Backend – auch wenn keine Plugins aktiv sind.
  *               Verwendet dieselben Funktionsnamen wie fgr-hide-login, damit kein doppeltes Menü entsteht.
- * Version:      1.8.2
+ * Version:      1.9.0
  * Author:       Freie Gestalterische Republik
  */
 
@@ -352,6 +352,13 @@ if ( ! function_exists( 'fgr_register_admin_menu' ) ) {
                 'name' => 'FGR 2FA',
                 'desc' => 'Zwei-Faktor-Authentifizierung (TOTP, E-Mail, Backup-Codes)',
                 'page' => 'fgr-2fa',
+            ],
+            [
+                'slug' => 'fgr-password-policy',
+                'file' => 'fgr-password-policy/fgr-password-policy.php',
+                'name' => 'FGR Password Policy',
+                'desc' => 'Erzwingt sichere Passwörter für ausgewählte Benutzerrollen',
+                'page' => 'fgr-password-policy',
             ],
         ];
         ?>
