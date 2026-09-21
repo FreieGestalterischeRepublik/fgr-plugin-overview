@@ -3,7 +3,7 @@
  * Plugin Name:  FGR Plugin-Übersicht MU
  * Description:  Zeigt immer das Menü "FGR Plugins" im Backend – auch wenn keine Plugins aktiv sind.
  *               Verwendet dieselben Funktionsnamen wie fgr-hide-login, damit kein doppeltes Menü entsteht.
- * Version:      1.9.0
+ * Version:      1.9.1
  * Author:       Freie Gestalterische Republik
  */
 
@@ -549,7 +549,7 @@ if ( ! function_exists( 'fgr_register_admin_menu' ) ) {
         }
 
         $slug    = sanitize_key( $_POST['slug'] ?? '' );
-        $allowed = [ 'fgr-mail-smtp', 'fgr-hide-login', 'fgr-maintenance', 'fgr-email-encoder', 'fgr-duplicate-post', 'fgr-2fa' ];
+        $allowed = [ 'fgr-mail-smtp', 'fgr-hide-login', 'fgr-maintenance', 'fgr-email-encoder', 'fgr-duplicate-post', 'fgr-2fa', 'fgr-password-policy' ];
 
         if ( ! in_array( $slug, $allowed, true ) ) {
             wp_send_json_error( 'Unbekanntes Plugin.' );
