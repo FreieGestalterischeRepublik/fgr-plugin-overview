@@ -3,7 +3,7 @@
  * Plugin Name:  FGR Plugin-Übersicht MU
  * Description:  Zeigt immer das Menü "FGR Plugins" im Backend – auch wenn keine Plugins aktiv sind.
  *               Verwendet dieselben Funktionsnamen wie fgr-hide-login, damit kein doppeltes Menü entsteht.
- * Version:      1.9.2
+ * Version:      1.9.3
  * Author:       Freie Gestalterische Republik
  */
 
@@ -374,6 +374,13 @@ if ( ! function_exists( 'fgr_register_admin_menu' ) ) {
                 'desc' => 'Erzwingt sichere Passwörter für ausgewählte Benutzerrollen',
                 'page' => 'fgr-password-policy',
             ],
+            [
+                'slug' => 'fgr-matomo-stats',
+                'file' => 'fgr-matomo-stats/fgr-matomo-stats.php',
+                'name' => 'FGR Matomo Stats',
+                'desc' => 'Matomo-Statistiken dieser Seite im Backend anzeigen (nur mit FGR-Matomo)',
+                'page' => 'fgr-matomo-stats',
+            ],
         ];
         ?>
         <div class="wrap">
@@ -563,7 +570,7 @@ if ( ! function_exists( 'fgr_register_admin_menu' ) ) {
         }
 
         $slug    = sanitize_key( $_POST['slug'] ?? '' );
-        $allowed = [ 'fgr-mail-smtp', 'fgr-hide-login', 'fgr-maintenance', 'fgr-email-encoder', 'fgr-duplicate-post', 'fgr-2fa', 'fgr-password-policy' ];
+        $allowed = [ 'fgr-mail-smtp', 'fgr-hide-login', 'fgr-maintenance', 'fgr-email-encoder', 'fgr-duplicate-post', 'fgr-2fa', 'fgr-password-policy', 'fgr-matomo-stats' ];
 
         if ( ! in_array( $slug, $allowed, true ) ) {
             wp_send_json_error( 'Unbekanntes Plugin.' );
