@@ -3,7 +3,7 @@
  * Plugin Name:  FGR Plugin-Übersicht MU
  * Description:  Zeigt immer das Menü "FGR Plugins" im Backend – auch wenn keine Plugins aktiv sind.
  *               Verwendet dieselben Funktionsnamen wie fgr-hide-login, damit kein doppeltes Menü entsteht.
- * Version:      1.9.1
+ * Version:      1.9.2
  * Author:       Freie Gestalterische Republik
  */
 
@@ -145,6 +145,13 @@ function fgr_mu_do_update_handler(): void {
     wp_send_json_success( [ 'version' => $new_version ] );
 }
 
+// ── Auto-Update: eigener Sync an WordPress' taeglichen Update-Cron gehaengt ──
+// Must-Use-Plugins nehmen nicht am normalen auto_update_plugin-Mechanismus
+// teil, darum haengt sich fgr_mu_sync() hier direkt an denselben Cron-Hook,
+// den WordPress fuer die taegliche Plugin-Update-Pruefung nutzt.
+
+add_action( 'wp_update_plugins', 'fgr_mu_sync' );
+
 // ── upgrader_process_complete Hook ───────────────────────────────────────────
 
 add_action( 'upgrader_process_complete', 'fgr_mu_upgrader_hook', 10, 2 );
@@ -242,12 +249,19 @@ add_action( 'plugins_loaded', function (): void {
             if ( ! file_exists( $plugin_path ) ) continue;
 
             $updater = YahnisElsts\PluginUpdateChecker\v5\PucFactory::buildUpdateChecker(
-                'https://github.com/FreieGestalterischeRepublik/' . $slug . '/',
+                'https://fgr-plugins-api.fgr.design/' . $slug . '.json',
                 $plugin_path,
                 $slug
             );
-            $updater->setBranch( 'main' );
-            $updater->getVcsApi()->enableReleaseAssets();
+
+            // Auto-Update auch fuer inaktive FGR-Plugins: WordPress' taeglicher
+            // Update-Cron installiert neue Versionen automatisch.
+            add_filter( 'auto_update_plugin', function ( $update, $item ) use ( $slug ) {
+                if ( isset( $item->slug ) && $item->slug === $slug ) {
+                    return true;
+                }
+                return $update;
+            }, 10, 2 );
         }
     }
 
