@@ -3,7 +3,7 @@
  * Plugin Name:  FGR Plugin-Übersicht MU
  * Description:  Zeigt immer das Menü "FGR Plugins" im Backend – auch wenn keine Plugins aktiv sind.
  *               Verwendet dieselben Funktionsnamen wie fgr-hide-login, damit kein doppeltes Menü entsteht.
- * Version:      1.9.4
+ * Version:      1.9.5
  * Author:       Freie Gestalterische Republik
  */
 
@@ -405,11 +405,11 @@ if ( ! function_exists( 'fgr_register_admin_menu' ) ) {
                     </div>
                     <p style="color:#555;margin-bottom:16px"><?php echo esc_html( $p['desc'] ); ?></p>
                     <?php if ( $active ) : ?>
-                        <a href="<?php echo esc_url( admin_url( 'admin.php?page=' . $p['page'] ) ); ?>"
+                        <a href="<?php echo esc_url( is_multisite() ? network_admin_url( 'admin.php?page=' . $p['page'] ) : admin_url( 'admin.php?page=' . $p['page'] ) ); ?>"
                            class="button button-primary">Einstellungen</a>
                     <?php elseif ( $installed ) : ?>
                         <a href="<?php echo esc_url( wp_nonce_url(
-                            admin_url( 'plugins.php?action=activate&plugin=' . urlencode( $p['file'] ) ),
+                            ( is_multisite() ? network_admin_url( 'plugins.php?action=activate&plugin=' . urlencode( $p['file'] ) ) : admin_url( 'plugins.php?action=activate&plugin=' . urlencode( $p['file'] ) ) ),
                             'activate-plugin_' . $p['file']
                         ) ); ?>" class="button button-primary">Aktivieren</a>
                     <?php else : ?>
