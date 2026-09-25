@@ -3,7 +3,7 @@
  * Plugin Name:  FGR Plugin-Übersicht MU
  * Description:  Zeigt immer das Menü "FGR Plugins" im Backend – auch wenn keine Plugins aktiv sind.
  *               Verwendet dieselben Funktionsnamen wie fgr-hide-login, damit kein doppeltes Menü entsteht.
- * Version:      1.9.5
+ * Version:      1.9.6
  * Author:       Freie Gestalterische Republik
  */
 
@@ -321,16 +321,23 @@ if ( ! function_exists( 'fgr_register_admin_menu' ) ) {
             'fgr_render_plugins_overview'
         );
     }
-    add_action( is_multisite() ? 'network_admin_menu' : 'admin_menu', 'fgr_register_admin_menu', 5 );
+    // Erscheint bei Multisite an beiden Stellen: pro Einzelseite (für Plugins mit
+    // seitenspezifischen Einstellungen wie Hide Login) und in der Netzwerkverwaltung
+    // (für netzwerkweite Plugins wie Mail SMTP).
+    add_action( 'admin_menu', 'fgr_register_admin_menu', 5 );
+    if ( is_multisite() ) {
+        add_action( 'network_admin_menu', 'fgr_register_admin_menu', 5 );
+    }
 
     function fgr_render_plugins_overview(): void {
         $plugins = [
             [
-                'slug' => 'fgr-mail-smtp',
-                'file' => 'fgr-mail-smtp/fgr-mail-smtp.php',
-                'name' => 'FGR Mail SMTP',
-                'desc' => 'E-Mails über SMTP oder Microsoft 365 versenden',
-                'page' => 'fgr-mail-smtp',
+                'slug'    => 'fgr-mail-smtp',
+                'file'    => 'fgr-mail-smtp/fgr-mail-smtp.php',
+                'name'    => 'FGR Mail SMTP',
+                'desc'    => 'E-Mails über SMTP oder Microsoft 365 versenden',
+                'page'    => 'fgr-mail-smtp',
+                'network' => true, // Einstellungen gelten netzwerkweit, nicht pro Einzelseite
             ],
             [
                 'slug' => 'fgr-hide-login',
@@ -404,12 +411,18 @@ if ( ! function_exists( 'fgr_register_admin_menu' ) ) {
                         <?php echo $badge; // phpcs:ignore ?>
                     </div>
                     <p style="color:#555;margin-bottom:16px"><?php echo esc_html( $p['desc'] ); ?></p>
+                    <?php
+                    // Nur fgr-mail-smtp ist netzwerkweit (speichert via get_site_option);
+                    // alle anderen Plugins haben seitenspezifische Einstellungen, deren
+                    // Einstellungsseite nur pro Einzelseite existiert (admin_menu).
+                    $use_network_url = is_multisite() && ! empty( $p['network'] );
+                    ?>
                     <?php if ( $active ) : ?>
-                        <a href="<?php echo esc_url( is_multisite() ? network_admin_url( 'admin.php?page=' . $p['page'] ) : admin_url( 'admin.php?page=' . $p['page'] ) ); ?>"
+                        <a href="<?php echo esc_url( $use_network_url ? network_admin_url( 'admin.php?page=' . $p['page'] ) : admin_url( 'admin.php?page=' . $p['page'] ) ); ?>"
                            class="button button-primary">Einstellungen</a>
                     <?php elseif ( $installed ) : ?>
                         <a href="<?php echo esc_url( wp_nonce_url(
-                            ( is_multisite() ? network_admin_url( 'plugins.php?action=activate&plugin=' . urlencode( $p['file'] ) ) : admin_url( 'plugins.php?action=activate&plugin=' . urlencode( $p['file'] ) ) ),
+                            ( $use_network_url ? network_admin_url( 'plugins.php?action=activate&plugin=' . urlencode( $p['file'] ) ) : admin_url( 'plugins.php?action=activate&plugin=' . urlencode( $p['file'] ) ) ),
                             'activate-plugin_' . $p['file']
                         ) ); ?>" class="button button-primary">Aktivieren</a>
                     <?php else : ?>
