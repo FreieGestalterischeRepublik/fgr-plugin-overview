@@ -3,11 +3,47 @@
  * Plugin Name:  FGR Plugin-Übersicht MU
  * Description:  Zeigt immer das Menü "FGR Plugins" im Backend – auch wenn keine Plugins aktiv sind.
  *               Verwendet dieselben Funktionsnamen wie fgr-hide-login, damit kein doppeltes Menü entsteht.
- * Version:      1.9.6
+ * Version:      1.9.7
  * Author:       Freie Gestalterische Republik
  */
 
 defined( 'ABSPATH' ) || exit;
+
+// ── Release-Info von der zentralen FGR-Update-API ────────────────────────────
+
+if ( ! function_exists( 'fgr_mu_release_info' ) ) {
+    /**
+     * Aktuelle Release-Version + Download-URL eines FGR-Plugins von der zentralen
+     * Update-API (fgr-plugins-api.fgr.design) statt direkt von der GitHub-API —
+     * die erlaubt ohne Token nur 60 Anfragen/Stunde pro Server-IP und ist auf
+     * Shared-Hostern (geteilte IP) oft schon von anderen Kunden ausgeschöpft.
+     *
+     * @return array{version: string, tag: string, download_url: string}|null
+     */
+    function fgr_mu_release_info( string $slug ): ?array {
+        $response = wp_remote_get(
+            'https://fgr-plugins-api.fgr.design/' . rawurlencode( $slug ) . '.json',
+            [
+                'timeout'    => 10,
+                'user-agent' => 'WordPress/' . get_bloginfo( 'version' ) . '; ' . home_url(),
+            ]
+        );
+        if ( is_wp_error( $response ) || 200 !== wp_remote_retrieve_response_code( $response ) ) return null;
+
+        $data         = json_decode( wp_remote_retrieve_body( $response ), true );
+        $version      = (string) ( $data['version'] ?? '' );
+        $download_url = (string) ( $data['download_url'] ?? '' );
+        if ( ! preg_match( '/^[\d.]+$/', $version ) ) return null;
+        // Nur Downloads aus dem eigenen GitHub-Repo des Plugins zulassen
+        if ( 0 !== strpos( $download_url, 'https://github.com/FreieGestalterischeRepublik/' . $slug . '/' ) ) return null;
+
+        return [
+            'version'      => $version,
+            'tag'          => 'v' . $version,
+            'download_url' => $download_url,
+        ];
+    }
+}
 
 // ── MU-Plugin-Sync ────────────────────────────────────────────────────────────
 
@@ -15,17 +51,9 @@ if ( ! function_exists( 'fgr_mu_sync' ) ) {
     function fgr_mu_sync( bool $force = false ): bool {
         // An den jeweils aktuellen GitHub-Release gepinnt statt an den beweglichen main-Branch:
         // ein Release ist ein bewusster, protokollierter Veröffentlichungsschritt, kein einzelner Push.
-        $release = wp_remote_get(
-            'https://api.github.com/repos/FreieGestalterischeRepublik/fgr-plugin-overview/releases/latest',
-            [
-                'timeout'    => 10,
-                'user-agent' => 'WordPress/' . get_bloginfo( 'version' ) . '; ' . home_url(),
-            ]
-        );
-        if ( is_wp_error( $release ) || 200 !== wp_remote_retrieve_response_code( $release ) ) return false;
-        $release_data = json_decode( wp_remote_retrieve_body( $release ), true );
-        $tag          = (string) ( $release_data['tag_name'] ?? '' );
-        if ( '' === $tag || ! preg_match( '/^v?[\d.]+$/', $tag ) ) return false;
+        $release = fgr_mu_release_info( 'fgr-plugin-overview' );
+        if ( null === $release ) return false;
+        $tag = $release['tag'];
 
         // Cache-Busting-Parameter verhindert CDN-Cache (GitHub raw hat bis zu 5 Min. Cache)
         $url      = 'https://raw.githubusercontent.com/FreieGestalterischeRepublik/fgr-plugin-overview/' . rawurlencode( $tag ) . '/fgr-plugin-overview.php?nocache=' . time();
@@ -81,25 +109,18 @@ function fgr_mu_get_update_info( bool $force = false ): array {
 
     $current = fgr_mu_installed_version();
 
-    $response = wp_remote_get(
-        'https://api.github.com/repos/FreieGestalterischeRepublik/fgr-plugin-overview/releases/latest',
-        [
-            'timeout'    => 10,
-            'user-agent' => 'WordPress/' . get_bloginfo( 'version' ) . '; ' . home_url(),
-        ]
-    );
+    $release = fgr_mu_release_info( 'fgr-plugin-overview' );
 
-    if ( is_wp_error( $response ) || 200 !== wp_remote_retrieve_response_code( $response ) ) {
+    if ( null === $release ) {
         return [
             'current'          => $current,
             'latest'           => $current,
             'update_available' => false,
-            'error'            => is_wp_error( $response ) ? $response->get_error_message() : 'HTTP ' . wp_remote_retrieve_response_code( $response ),
+            'error'            => 'FGR-Update-API nicht erreichbar.',
         ];
     }
 
-    $body   = json_decode( wp_remote_retrieve_body( $response ), true );
-    $latest = ltrim( $body['tag_name'] ?? $current, 'v' );
+    $latest = $release['version'];
 
     $info = [
         'current'          => $current,
@@ -138,7 +159,7 @@ function fgr_mu_do_update_handler(): void {
     // $force = true: Versionsvergleich überspringen, immer schreiben
     $ok = fgr_mu_sync( true );
     if ( ! $ok ) {
-        wp_send_json_error( 'Update fehlgeschlagen. Mögliche Ursachen: keine Schreibrechte auf mu-plugins/, GitHub nicht erreichbar.' );
+        wp_send_json_error( 'Update fehlgeschlagen. Mögliche Ursachen: keine Schreibrechte auf mu-plugins/, FGR-Update-API oder GitHub nicht erreichbar.' );
     }
     delete_transient( 'fgr_mu_update_info' );
     $new_version = fgr_mu_installed_version();
@@ -592,21 +613,15 @@ if ( ! function_exists( 'fgr_register_admin_menu' ) ) {
         require_once ABSPATH . 'wp-admin/includes/class-wp-upgrader.php';
         require_once ABSPATH . 'wp-admin/includes/plugin.php';
 
-        // An den aktuellen Release-Tag gepinnt statt an den beweglichen main-Branch
+        // An den aktuellen Release gepinnt statt an den beweglichen main-Branch
         // (siehe fgr_mu_sync() oben) — ein Release ist ein bewusster Veröffentlichungsschritt.
-        $release = wp_remote_get(
-            "https://api.github.com/repos/FreieGestalterischeRepublik/{$slug}/releases/latest",
-            [ 'timeout' => 10, 'user-agent' => 'WordPress/' . get_bloginfo( 'version' ) . '; ' . home_url() ]
-        );
-        if ( is_wp_error( $release ) || 200 !== wp_remote_retrieve_response_code( $release ) ) {
+        // download_url ist das Release-ZIP, falls vorhanden, sonst das Tag-Archiv.
+        $release = fgr_mu_release_info( $slug );
+        if ( null === $release ) {
             wp_send_json_error( 'Release-Information konnte nicht geladen werden.' );
         }
-        $tag = (string) ( json_decode( wp_remote_retrieve_body( $release ), true )['tag_name'] ?? '' );
-        if ( '' === $tag || ! preg_match( '/^v?[\d.]+$/', $tag ) ) {
-            wp_send_json_error( 'Ungültige Release-Version.' );
-        }
 
-        $zip_url  = "https://github.com/FreieGestalterischeRepublik/{$slug}/archive/refs/tags/{$tag}.zip";
+        $zip_url  = $release['download_url'];
         $skin     = new WP_Ajax_Upgrader_Skin();
         $upgrader = new Plugin_Upgrader( $skin );
         $result   = $upgrader->install( $zip_url );
