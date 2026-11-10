@@ -3,7 +3,7 @@
  * Plugin Name:  FGR Plugin-Übersicht MU
  * Description:  Zeigt immer das Menü "FGR Plugins" im Backend – auch wenn keine Plugins aktiv sind.
  *               Verwendet dieselben Funktionsnamen wie fgr-hide-login, damit kein doppeltes Menü entsteht.
- * Version:      1.9.7
+ * Version:      1.9.8
  * Author:       Freie Gestalterische Republik
  */
 
@@ -195,6 +195,7 @@ function fgr_mu_upgrader_hook( $upgrader, array $hook_extra ): void {
             'fgr-email-encoder/fgr-email-encoder.php',
             'fgr-duplicate-post/fgr-duplicate-post.php',
             'fgr-2fa/fgr-2fa.php',
+            'fgr-password-protect/fgr-password-protect.php',
         ];
         $updated = array_merge(
             isset( $hook_extra['plugin'] )  ? (array) $hook_extra['plugin']  : [],
@@ -246,6 +247,7 @@ add_action( 'plugins_loaded', function (): void {
         'fgr-email-encoder'   => 'fgr-email-encoder/fgr-email-encoder.php',
         'fgr-duplicate-post'  => 'fgr-duplicate-post/fgr-duplicate-post.php',
         'fgr-2fa'             => 'fgr-2fa/fgr-2fa.php',
+        'fgr-password-protect' => 'fgr-password-protect/fgr-password-protect.php',
     ];
 
     $active_plugins = (array) get_option( 'active_plugins', [] );
@@ -373,6 +375,13 @@ if ( ! function_exists( 'fgr_register_admin_menu' ) ) {
                 'name' => 'FGR Maintenance',
                 'desc' => 'Under-Construction- oder Wartungsseite anzeigen',
                 'page' => 'fgr-maintenance',
+            ],
+            [
+                'slug' => 'fgr-password-protect',
+                'file' => 'fgr-password-protect/fgr-password-protect.php',
+                'name' => 'FGR Password Protect',
+                'desc' => 'Gesamte Website mit einem Passwort schützen',
+                'page' => 'fgr-password-protect',
             ],
             [
                 'slug' => 'fgr-email-encoder',
@@ -604,7 +613,7 @@ if ( ! function_exists( 'fgr_register_admin_menu' ) ) {
         }
 
         $slug    = sanitize_key( $_POST['slug'] ?? '' );
-        $allowed = [ 'fgr-mail-smtp', 'fgr-hide-login', 'fgr-maintenance', 'fgr-email-encoder', 'fgr-duplicate-post', 'fgr-2fa', 'fgr-password-policy', 'fgr-matomo-stats' ];
+        $allowed = [ 'fgr-mail-smtp', 'fgr-hide-login', 'fgr-maintenance', 'fgr-email-encoder', 'fgr-duplicate-post', 'fgr-2fa', 'fgr-password-policy', 'fgr-matomo-stats', 'fgr-password-protect' ];
 
         if ( ! in_array( $slug, $allowed, true ) ) {
             wp_send_json_error( 'Unbekanntes Plugin.' );
